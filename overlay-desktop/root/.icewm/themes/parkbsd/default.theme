@@ -1,0 +1,81 @@
+# PARKBSD -- the cockpit, as an icewm theme.
+#
+# These colours live in a THEME rather than in ~/.icewm/preferences because a
+# theme's colours override the preferences file, not the other way round. Set
+# them in preferences with any theme loaded and nothing happens, which reads as
+# "icewm ignored my config" and is really "something else answered first".
+#
+# Palette read out of RAVIO's world/index.html, not eyeballed:
+#   --acc  #F2C14E  amber   the dashboard accent -> the focused window
+#   --cool #2DE2E6  cyan    live/selected, same as the gauges
+#   --rim  #C8862A  bronze  edges
+#   --warn #FF5A3C  orange  urgent
+#   bg     #03040a  the space behind the road
+#   text   #f3ead4  warm cream, never white
+
+ThemeAuthor="PARKVPS"
+ThemeDescription="RAVIO cockpit"
+
+# Titles. Focused is lit amber on near-black like an instrument that is
+# currently reading; unfocused drops to grey so "not focused" is legible at a
+# glance rather than merely dimmer.
+ColorActiveTitleBar="#0b1020"
+ColorActiveTitleBarText="#F2C14E"
+ColorActiveTitleBarShadow="#03040a"
+ColorNormalTitleBar="#070a14"
+ColorNormalTitleBarText="#6f7a92"
+ColorNormalTitleBarShadow="#03040a"
+
+ColorActiveBorder="#C8862A"
+ColorNormalBorder="#1b2436"
+
+# Buttons on the title bar
+ColorNormalButton="#0b1020"
+ColorNormalButtonText="#c8d6e5"
+
+# Menus: cyan highlight on near-black
+ColorNormalMenu="#05070e"
+ColorNormalMenuItemText="#c8d6e5"
+ColorActiveMenuItem="#12304a"
+ColorActiveMenuItemText="#2DE2E6"
+ColorDisabledMenuItemText="#43506b"
+ColorDisabledMenuItemShadow="#03040a"
+ColorMenuItemShadow="#03040a"
+
+# Dialogs, move/resize readout, alt-tab
+ColorDialog="#05070e"
+ColorDialogText="#f3ead4"
+ColorMoveSizeStatus="#05070e"
+ColorMoveSizeStatusText="#2DE2E6"
+ColorQuickSwitch="#05070e"
+ColorQuickSwitchText="#F2C14E"
+ColorQuickSwitchActive="#2DE2E6"
+ColorQuickSwitchBorder="#C8862A"
+
+ColorScrollBar="#0b1020"
+ColorScrollBarSlider="#1b2436"
+ColorScrollBarButton="#12304a"
+ColorScrollBarArrow="#2DE2E6"
+
+ColorInput="#03040a"
+ColorInputText="#f3ead4"
+ColorInputSelection="#12304a"
+ColorInputSelectionText="#2DE2E6"
+
+ColorLabel="#05070e"
+ColorLabelText="#c8d6e5"
+ColorToolTip="#0b1020"
+ColorToolTipText="#f3ead4"
+
+TitleFontNameXft="DejaVu Sans:size=10:bold"
+MenuFontNameXft="DejaVu Sans:size=10"
+StatusFontNameXft="DejaVu Sans Mono:size=10"
+QuickSwitchFontNameXft="DejaVu Sans:size=11:bold"
+ToolTipFontNameXft="DejaVu Sans:size=9"
+
+TitleBarHeight=24
+TitleBarJustify=0
+BorderSizeX=2
+BorderSizeY=2
+DlgBorderSizeX=2
+DlgBorderSizeY=2

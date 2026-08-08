@@ -1,0 +1,125 @@
+#---- PARKBSD cockpit panel -------------------------------------------------
+# A VERTICAL panel down the LEFT edge.
+#
+# This exists because icewm's own taskbar cannot be vertical -- it supports top
+# and bottom only. So icewm's taskbar is switched off in ~/.icewm/preferences
+# and tint2 provides the panel instead. icewm stays the window manager; tint2 is
+# only the panel.
+#
+# Colours are RAVIO's: amber #F2C14E, cyan #2DE2E6, bronze #C8862A, on #03040a.
+
+#---- Backgrounds -----------------------------------------------------------
+# 1: the panel itself -- near-black, with a bronze rim on the edge that faces
+#    the desktop, the way the dashboard meets the windshield.
+rounded = 0
+border_width = 0
+border_sides = R
+background_color = #03040a 88
+border_color = #C8862A 70
+background_color_hover = #03040a 88
+background_color_pressed = #03040a 88
+
+# 2: a task button at rest
+rounded = 3
+border_width = 1
+border_sides = TBLR
+background_color = #0b1020 70
+border_color = #1b2436 90
+background_color_hover = #12304a 80
+border_color_hover = #2DE2E6 90
+background_color_pressed = #12304a 90
+border_color_pressed = #2DE2E6 100
+
+# 3: the ACTIVE task -- lit amber, like the gauge that is currently reading
+rounded = 3
+border_width = 1
+border_sides = TBLR
+background_color = #1a1608 85
+border_color = #F2C14E 100
+background_color_hover = #241d0a 90
+border_color_hover = #F2C14E 100
+background_color_pressed = #241d0a 95
+border_color_pressed = #F2C14E 100
+
+# 4: transparent, for the launcher and clock
+rounded = 0
+border_width = 0
+background_color = #000000 0
+border_color = #000000 0
+
+#---- Panel -----------------------------------------------------------------
+# `vertical` is the whole point. 62px wide, full height, docked left.
+panel_items = LTC
+# PANEL_SIZE IS `width height` FOR A HORIZONTAL PANEL AND SWAPPED FOR A VERTICAL
+# ONE. To get a 62px column running the full height you write `100% 62`, not
+# `62 100%`. Writing it the intuitive way produces a full-width bar 62px tall --
+# which looks like the `vertical` keyword was ignored, and is not: tint2 read
+# the orientation, swapped the pair, and did exactly what it was told.
+panel_size = 100% 62
+panel_position = center left vertical
+panel_margin = 0 0
+panel_padding = 5 8 8
+panel_background_id = 1
+panel_monitor = all
+panel_layer = bottom
+panel_dock = 0
+wm_menu = 1
+# Reserve the strut so maximised windows stop at the panel instead of under it.
+autohide = 0
+strut_policy = follow_size
+panel_window_name = parkbsd-panel
+disable_transparency = 0
+mouse_effects = 1
+
+#---- Launcher --------------------------------------------------------------
+launcher_padding = 2 4 6
+launcher_background_id = 4
+launcher_icon_size = 40
+launcher_icon_theme_override = 0
+launcher_tooltip = 1
+# Missing entries are skipped silently, so a flavour without firefox still works.
+launcher_item_app = /usr/local/share/applications/firefox.desktop
+launcher_item_app = /usr/local/share/applications/xterm.desktop
+
+#---- Taskbar ---------------------------------------------------------------
+taskbar_mode = single_desktop
+taskbar_padding = 0 4 6
+taskbar_background_id = 4
+taskbar_active_background_id = 4
+taskbar_name = 0
+taskbar_hide_if_empty = 0
+
+#---- Tasks -----------------------------------------------------------------
+# Icon only, no text: the panel is 62px wide and a truncated window title in
+# that space is noise rather than information. The tooltip carries the name.
+task_text = 0
+task_icon = 1
+task_centered = 1
+task_maximum_size = 48 48
+task_padding = 3 3 4
+task_tooltip = 1
+task_background_id = 2
+task_active_background_id = 3
+task_urgent_background_id = 2
+task_icon_asb = 70 0 0
+task_active_icon_asb = 100 0 0
+task_urgent_icon_asb = 100 0 0
+
+#---- Clock -----------------------------------------------------------------
+# Stacked, because the panel is narrow: time over date.
+time1_format = %H:%M
+time1_font = DejaVu Sans Bold 9
+time2_format = %d %b
+time2_font = DejaVu Sans 7
+clock_font_color = #2DE2E6 100
+clock_padding = 2 4
+clock_background_id = 4
+clock_tooltip = %A %d %B %Y
+
+#---- Tooltips --------------------------------------------------------------
+tooltip_show_timeout = 0.4
+tooltip_hide_timeout = 0.1
+tooltip_padding = 6 4
+tooltip_background_id = 3
+tooltip_font_color = #f3ead4 100
+tooltip_font = DejaVu Sans 9

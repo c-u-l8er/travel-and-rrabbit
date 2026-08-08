@@ -1,0 +1,35 @@
+# PARKBSD desktop -- the cockpit palette, applied to the window manager.
+#
+# Colours are RAVIO's own, read out of world/index.html rather than
+# eyeballed from a screenshot:
+#   --acc  #F2C14E  amber   the dashboard accent, and here the active window
+#   --cool #2DE2E6  cyan    live/selected, the same as the gauges
+#   --rim  #C8862A  bronze  edges and rims
+#   --warn #FF5A3C  orange  urgent
+#   bg     #03040a  the space behind the road
+#   text   #f3ead4  warm cream, not white
+#
+# The taskbar is OFF here on purpose: tint2 provides a VERTICAL panel down the
+# left instead, which icewm cannot do -- its taskbar is horizontal only.
+ShowTaskBar=0
+
+# The road, behind everything.
+DesktopBackgroundImage="/usr/local/share/parkbsd/wallpaper.jpg"
+DesktopBackgroundScaled=1
+DesktopBackgroundCenter=1
+DesktopBackgroundColor="#03040a"
+
+DesktopBackgroundMultihead=1
+
+# Opaque move, and no snapping: this is a machine you are driving, and a window
+# that leaps to a grid feels like something else deciding for you.
+OpaqueMove=1
+OpaqueResize=1
+SnapMove=0
+
+ShowThemesMenu=1
+UseMouseWheel=1
+
+# Colours and fonts are NOT here -- they are in themes/parkbsd/default.theme,
+# because a loaded theme overrides this file. Setting them here as well would
+# mean two files claiming the same thing and only one of them winning.

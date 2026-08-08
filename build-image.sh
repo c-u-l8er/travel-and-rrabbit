@@ -224,10 +224,14 @@ EOF
 fi
 
 # An operator-supplied overlay wins over everything above, so local changes
-# never require editing this script.
-if [ -d "$HERE/overlay" ]; then
-  echo "==> applying overlay/"
-  cp -R "$HERE/overlay/." "$STAGE/"
+# never require editing this script. The directory is named by the config, so a
+# flavour brings its own -- the desktop's theme must not land in the server
+# image, which has no X to theme.
+OVL="$HERE/${OVERLAY_DIR:-overlay}"
+if [ -d "$OVL" ]; then
+  echo "==> applying $(basename "$OVL")/"
+  cp -R "$OVL/." "$STAGE/"
+  chmod 0755 "$STAGE/root/.xinitrc" 2>/dev/null || true
 fi
 
 # FreeBSD gates every `KEYWORD: firstboot` rc script -- nuageinit and growfs
