@@ -141,6 +141,58 @@ cat > "$STAGE/etc/motd.template" <<EOF
 
 EOF
 
+# ---------------------------------------------------------------------------
+# 4b. the graphical seat, when this flavour asks for one
+# ---------------------------------------------------------------------------
+if [ "${DESKTOP:-no}" = "yes" ]; then
+  echo "==> configuring the desktop"
+
+  # scfb draws on the framebuffer UEFI already programmed, so there is no mode
+  # setting to do and no DRM module to match against the kernel. Xorg will not
+  # pick it on its own when a VESA driver is also plausible, so name it.
+  mkdir -p "$STAGE/usr/local/etc/X11/xorg.conf.d"
+  cat > "$STAGE/usr/local/etc/X11/xorg.conf.d/10-scfb.conf" <<'EOF'
+Section "Device"
+    Identifier  "Card0"
+    Driver      "scfb"
+EndSection
+EOF
+
+  # Autologin on the VIDEO console only. ttyu0 (serial) keeps its normal login,
+  # so the two consoles do not both hand out root -- the serial one is the one
+  # reachable by anything that can open a unix socket.
+  cat >> "$STAGE/etc/gettytab" <<'EOF'
+
+#
+# PARKBSD: autologin root on the graphical console so X can start without a
+# display manager. Deliberately a SEPARATE entry from Pc, so only the tty that
+# names it is affected.
+#
+Pc-autologin|Pc console with autologin:\
+	:al=root:tc=Pc:
+EOF
+  sed -i '' 's|^ttyv0.*|ttyv0	"/usr/libexec/getty Pc-autologin"	xterm	onifexists secure|' \
+    "$STAGE/etc/ttys"
+
+  cat > "$STAGE/root/.xinitrc" <<EOF
+#!/bin/sh
+exec $DESKTOP_SESSION
+EOF
+  chmod 0755 "$STAGE/root/.xinitrc"
+
+  # Start X from the login shell rather than exec'ing it. If startx fails, an
+  # exec would end the session, getty would autologin again and try again --
+  # a boot loop whose only symptom is a flickering black screen. Falling
+  # through leaves a root shell on the console and a log to read.
+  cat >> "$STAGE/root/.profile" <<'EOF'
+
+# PARKBSD: the graphical console starts X; the serial console does not.
+if [ "$(tty)" = "/dev/ttyv0" ] && [ -z "$DISPLAY" ]; then
+	startx > /var/log/startx.log 2>&1
+fi
+EOF
+fi
+
 # An operator-supplied overlay wins over everything above, so local changes
 # never require editing this script.
 if [ -d "$HERE/overlay" ]; then
