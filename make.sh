@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a PARKBSD golden image, end to end, from the Linux host.
+# Build a T&R golden image, end to end, from the Linux host.
 #
 # The image has to be assembled on FreeBSD (makefs, mkimg and pkg's -r mode are
 # all FreeBSD-native), so this pushes distro/ into a running builder instance,
@@ -11,7 +11,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 BUILDER="${1:-builder}"
-CONF="${2:-parkbsd.conf}"
+CONF="${2:-tandr.conf}"
 
 REC="$ROOT/var/run/$BUILDER/instance.json"
 [ -f "$REC" ] || { echo "no such instance: $BUILDER" >&2; exit 1; }
@@ -27,10 +27,13 @@ fi
 
 # Read the distro identity from the config rather than assuming it, so renaming
 # the distro in one file renames the artifact everywhere.
-NAME=$(awk -F'"' '/^DISTRO_NAME=/{print $2}' "$HERE/$CONF")
+# The SLUG, not the display name: build-image.sh writes the artifact by slug
+# because "T&R-0.1.raw" is a filename that needs quoting in every command that
+# touches it.
+SLUG=$(awk -F'"' '/^DISTRO_SLUG=/{print $2}' "$HERE/$CONF")
 VERSION=$(awk -F'"' '/^DISTRO_VERSION=/{print $2}' "$HERE/$CONF")
-RAW="${NAME}-${VERSION}.raw"
-OUT="$ROOT/var/images/${NAME}-${VERSION}.qcow2"
+RAW="${SLUG}-${VERSION}.raw"
+OUT="$ROOT/var/images/${SLUG}-${VERSION}.qcow2"
 
 # A golden image is the backing file of every overlay built on it. Overwriting
 # one while an instance is running corrupts that instance's view of its own
@@ -69,7 +72,7 @@ echo "==> streaming image back"
 # Compressed in flight: the raw image is mostly zeros, so this is many times
 # faster than copying it and costs one cheap gzip level.
 ssh -p "$PORT" "${SSHOPTS[@]}" "$USER@127.0.0.1" \
-    "sudo gzip -1 -c /var/tmp/parkbsd/$RAW" | gunzip > "$ROOT/var/images/$RAW"
+    "sudo gzip -1 -c /var/tmp/tandr/$RAW" | gunzip > "$ROOT/var/images/$RAW"
 
 echo "==> converting to qcow2"
 qemu-img convert -f raw -O qcow2 "$ROOT/var/images/$RAW" "$OUT"

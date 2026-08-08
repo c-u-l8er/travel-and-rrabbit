@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=XSession
-Name=PARKBSD cockpit
+Name=T&R cockpit
 Comment=icewm with the vertical tint2 panel
-Exec=/usr/local/bin/parkbsd-session
+Exec=/usr/local/bin/tandr-session
 TryExec=/usr/local/bin/icewm-session

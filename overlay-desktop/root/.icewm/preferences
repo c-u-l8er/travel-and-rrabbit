@@ -1,4 +1,4 @@
-# PARKBSD desktop -- the cockpit palette, applied to the window manager.
+# T&R desktop -- the cockpit palette, applied to the window manager.
 #
 # Colours are RAVIO's own, read out of world/index.html rather than
 # eyeballed from a screenshot:
@@ -14,7 +14,7 @@
 ShowTaskBar=0
 
 # The road, behind everything.
-DesktopBackgroundImage="/usr/local/share/parkbsd/wallpaper.jpg"
+DesktopBackgroundImage="/usr/local/share/tandr/wallpaper.jpg"
 DesktopBackgroundScaled=1
 DesktopBackgroundCenter=1
 DesktopBackgroundColor="#03040a"
@@ -30,6 +30,6 @@ SnapMove=0
 ShowThemesMenu=1
 UseMouseWheel=1
 
-# Colours and fonts are NOT here -- they are in themes/parkbsd/default.theme,
+# Colours and fonts are NOT here -- they are in themes/tandr/default.theme,
 # because a loaded theme overrides this file. Setting them here as well would
 # mean two files claiming the same thing and only one of them winning.

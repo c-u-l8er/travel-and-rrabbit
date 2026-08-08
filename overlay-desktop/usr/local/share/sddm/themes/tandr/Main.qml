@@ -1,4 +1,4 @@
-// PARKBSD greeter -- the cockpit, as the first thing the machine shows you.
+// T&R greeter -- the cockpit, as the first thing the machine shows you.
 //
 // Deliberately QtQuick ONLY: no QtQuick.Controls, no SddmComponents. A greeter
 // that fails to load its imports shows a blank screen with no way in, and the
@@ -29,7 +29,7 @@ Rectangle {
     // login screen and the session you land in are one picture.
     Image {
         anchors.fill: parent
-        source: "file:///usr/local/share/parkbsd/wallpaper.jpg"
+        source: "file:///usr/local/share/tandr/wallpaper.jpg"
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
     }
@@ -59,7 +59,7 @@ Rectangle {
         Text {
             id: title
             anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 22 }
-            text: "PARKBSD"
+            text: "T&R"
             color: amber
             font { family: "DejaVu Sans"; pixelSize: 17; bold: true; letterSpacing: 5 }
         }

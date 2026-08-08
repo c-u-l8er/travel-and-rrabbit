@@ -1,5 +1,5 @@
 #!/bin/sh
-# PARKBSD image assembler. Runs INSIDE a FreeBSD builder VM, as root.
+# T&R image assembler. Runs INSIDE a FreeBSD builder VM, as root.
 #
 # Assembles a bootable UEFI disk image from pkgbase packages -- no source tree,
 # no buildworld, no release tarballs. This is the NomadBSD approach updated for
@@ -7,25 +7,32 @@
 # a root filesystem is `pkg -r <dir> install`, and the rest is filesystem
 # plumbing.
 #
-#   build-image.sh [config]      default: ./parkbsd.conf
+#   build-image.sh [config]      default: ./tandr.conf
 #
 # Produces: <workdir>/<NAME>-<VERSION>.raw
 set -eu
 
 HERE=$(dirname "$0")
 CONF="${1-}"
-[ -n "$CONF" ] || CONF="$HERE/parkbsd.conf"
+[ -n "$CONF" ] || CONF="$HERE/tandr.conf"
 [ -r "$CONF" ] || { echo "no such config: $CONF" >&2; exit 1; }
 # shellcheck disable=SC1090
 . "$CONF"
 
 [ "$(id -u)" -eq 0 ] || { echo "must run as root (try: sudo $0 $*)" >&2; exit 1; }
 
-WORK="${WORK:-/var/tmp/parkbsd}"
+# DISTRO_NAME is a DISPLAY name and may contain anything -- "T&R" does. Paths
+# may not: "&" is invalid in a hostname, and it needs quoting in every shell
+# command and GPT label that touches it. So everything that becomes a path,
+# a label or a hostname uses DISTRO_SLUG, and only prose uses DISTRO_NAME.
+DISTRO_SLUG="${DISTRO_SLUG:-$(echo "$DISTRO_NAME" | tr '[:upper:]' '[:lower:]' \
+                             | sed 's/[^a-z0-9]//g')}"
+
+WORK="${WORK:-/var/tmp/tandr}"
 STAGE="$WORK/root"
 ESPDIR="$WORK/esp"
-IMG="$WORK/${DISTRO_NAME}-${DISTRO_VERSION}.raw"
-LABEL="$(echo "$DISTRO_NAME" | tr '[:upper:]' '[:lower:]')root"
+IMG="$WORK/${DISTRO_SLUG}-${DISTRO_VERSION}.raw"
+LABEL="${DISTRO_SLUG}root"
 
 echo "==> $DISTRO_NAME $DISTRO_VERSION ($DISTRO_CODENAME) from FreeBSD $FREEBSD_MAJOR pkgbase"
 # FreeBSD sets the system-immutable flag on parts of base (/sbin/init,
@@ -84,7 +91,7 @@ EOF
 
 cat > "$STAGE/etc/rc.conf" <<EOF
 # $DISTRO_NAME $DISTRO_VERSION
-hostname="$(echo "$DISTRO_NAME" | tr '[:upper:]' '[:lower:]')"
+hostname="$DISTRO_SLUG"
 ifconfig_DEFAULT="SYNCDHCP"
 zfs_enable="NO"
 
@@ -196,7 +203,7 @@ EOF
     cat >> "$STAGE/etc/gettytab" <<'EOF'
 
 #
-# PARKBSD: autologin root on the graphical console so X can start without a
+# T&R: autologin root on the graphical console so X can start without a
 # display manager. Deliberately a SEPARATE entry from Pc, so only the tty that
 # names it is affected.
 #
@@ -212,7 +219,7 @@ EOF
     # through leaves a root shell on the console and a log to read.
     cat >> "$STAGE/root/.profile" <<'EOF'
 
-# PARKBSD: the graphical console starts X; the serial console does not.
+# T&R: the graphical console starts X; the serial console does not.
 if [ "$(tty)" = "/dev/ttyv0" ] && [ -z "$DISPLAY" ]; then
 	startx > /var/log/startx.log 2>&1
 fi
@@ -233,10 +240,10 @@ HaltCommand=/sbin/shutdown -p now
 RebootCommand=/sbin/shutdown -r now
 
 [Theme]
-Current=parkbsd
+Current=tandr
 
 [Autologin]
-Session=parkbsd
+Session=tandr
 
 [Users]
 DefaultPath=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
@@ -269,11 +276,28 @@ fi
 # user is created with a locked password, so the image carries a real one.
 # ---------------------------------------------------------------------------
 if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
-  echo "==> desktop user ${DESKTOP_USER:-driver}"
   DU="${DESKTOP_USER:-driver}"
-  echo "${DESKTOP_PASSWORD:-driver}" | \
-    pw -R "$STAGE" useradd "$DU" -u 1010 -c "PARKBSD desktop" \
+  # An empty DESKTOP_PASSWORD means "generate one". That is the default, so a
+  # public repo carries no password at all -- the secret is created at build
+  # time, printed once, and written into the image where the operator can find
+  # it. Setting it in the config still works and is honoured as-is.
+  if [ -z "${DESKTOP_PASSWORD:-}" ]; then
+    DESKTOP_PASSWORD="$(LC_ALL=C tr -dc 'a-hj-km-np-z2-9' < /dev/urandom | head -c 12)"
+    GENERATED_PW=1
+  else
+    GENERATED_PW=0
+  fi
+  echo "==> desktop user $DU"
+  echo "$DESKTOP_PASSWORD" | \
+    pw -R "$STAGE" useradd "$DU" -u 1010 -c "T&R desktop" \
        -G wheel,video,operator -m -s /bin/sh -h 0
+  # Somewhere findable from inside the machine, since the greeter can tell you
+  # the username but obviously not the password.
+  printf '%s\n' "$DU:$DESKTOP_PASSWORD" > "$STAGE/root/DESKTOP-LOGIN"
+  chmod 0600 "$STAGE/root/DESKTOP-LOGIN"
+  cat >> "$STAGE/etc/motd.template" <<EOF
+  desktop login:  $DU / $DESKTOP_PASSWORD
+EOF
 fi
 
 if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
@@ -282,7 +306,7 @@ if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
   # among them by sort order, so SDDM launched `icewm-session` directly and the
   # tint2 panel never started -- a desktop that comes up looking almost right,
   # missing only the thing that makes it ours. This image ships one desktop, so
-  # it should offer one session; parkbsd.desktop runs parkbsd-session, which
+  # it should offer one session; tandr.desktop runs tandr-session, which
   # starts the panel AND icewm.
   rm -f "$STAGE/usr/local/share/xsessions/icewm.desktop" \
         "$STAGE/usr/local/share/xsessions/icewm-session.desktop" \
@@ -345,3 +369,8 @@ echo
 echo "==> done"
 ls -lh "$IMG"
 echo "image: $IMG"
+if [ "${GENERATED_PW:-0}" = "1" ]; then
+  echo
+  echo "    desktop login:  $DU / $DESKTOP_PASSWORD"
+  echo "    (generated for this build; also in /root/DESKTOP-LOGIN and the motd)"
+fi

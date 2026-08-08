@@ -1,4 +1,4 @@
-# PARKBSD -- the cockpit, as an icewm theme.
+# T&R -- the cockpit, as an icewm theme.
 #
 # These colours live in a THEME rather than in ~/.icewm/preferences because a
 # theme's colours override the preferences file, not the other way round. Set

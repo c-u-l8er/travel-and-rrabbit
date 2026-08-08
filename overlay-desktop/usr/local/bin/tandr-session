@@ -1,10 +1,10 @@
 #!/bin/sh
-# The PARKBSD desktop session, in ONE place.
+# The T&R desktop session, in ONE place.
 #
 # Both entry points run this: ~/.xinitrc (startx, when there is no display
 # manager) and the SDDM session entry. Two copies of "what a session is" is how
 # they drift, and the drift only shows up in whichever path you use less.
 [ -x /usr/local/bin/xwallpaper ] && \
-    xwallpaper --zoom /usr/local/share/parkbsd/wallpaper.jpg >/dev/null 2>&1
+    xwallpaper --zoom /usr/local/share/tandr/wallpaper.jpg >/dev/null 2>&1
 tint2 >/dev/null 2>&1 &
 exec icewm-session

@@ -1,4 +1,4 @@
-#---- PARKBSD cockpit panel -------------------------------------------------
+#---- T&R cockpit panel -------------------------------------------------
 # A VERTICAL panel down the LEFT edge.
 #
 # This exists because icewm's own taskbar cannot be vertical -- it supports top
@@ -67,7 +67,7 @@ wm_menu = 1
 # Reserve the strut so maximised windows stop at the panel instead of under it.
 autohide = 0
 strut_policy = follow_size
-panel_window_name = parkbsd-panel
+panel_window_name = tandr-panel
 disable_transparency = 0
 mouse_effects = 1
 
