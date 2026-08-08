@@ -158,6 +158,36 @@ Section "Device"
 EndSection
 EOF
 
+  # Core X font paths. Xft/fontconfig apps do not need these, but a window
+  # manager falling back to the core font 'fixed' does -- and fluxbox exits
+  # outright when it cannot find it.
+  cat > "$STAGE/usr/local/etc/X11/xorg.conf.d/20-fonts.conf" <<'EOF'
+Section "Files"
+    FontPath    "/usr/local/share/fonts/misc/"
+    FontPath    "/usr/local/share/fonts/dejavu/"
+    FontPath    "/usr/local/share/fonts/Liberation/"
+EndSection
+EOF
+
+  # pkg's post-install scripts do not reliably build a fontconfig cache when
+  # installing into a staged root with `pkg -r`, so do it on first boot. Without
+  # a cache fontconfig still works by scanning, but the first X start pays for
+  # it every single time.
+  cat > "$STAGE/etc/rc.d/parkvps_fccache" <<'EOF'
+#!/bin/sh
+# PROVIDE: parkvps_fccache
+# REQUIRE: FILESYSTEMS
+# BEFORE: LOGIN
+# KEYWORD: firstboot
+. /etc/rc.subr
+name="parkvps_fccache"
+start_cmd="/usr/local/bin/fc-cache -f >/dev/null 2>&1 || true"
+stop_cmd=":"
+load_rc_config $name
+run_rc_command "$1"
+EOF
+  chmod 0555 "$STAGE/etc/rc.d/parkvps_fccache"
+
   # Autologin on the VIDEO console only. ttyu0 (serial) keeps its normal login,
   # so the two consoles do not both hand out root -- the serial one is the one
   # reachable by anything that can open a unix socket.
