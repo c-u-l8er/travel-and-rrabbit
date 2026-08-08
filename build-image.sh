@@ -114,6 +114,26 @@ if [ -f "$STAGE/etc/ttys" ]; then
     "$STAGE/etc/ttys" || true
 fi
 
+# DON'T PROBE THE TERMINAL. FreeBSD's default .profile runs `resizewin -z` on a
+# serial line, which writes ESC[999;999H ESC[6n and reads the cursor position
+# back to learn the window size. Over a browser console the reply arrives after
+# resizewin has already timed out and restored cooked mode -- at which point it
+# is no longer an answer, it is keystrokes, and the shell runs them:
+#
+#     root@park1:~ # 4;80R
+#     -sh: 4: not found
+#     -sh: 80R: not found
+#
+# There is nothing to negotiate anyway: a serial console has no in-band resize,
+# so PARKVPS's terminal is a fixed 80x24 and scales instead of reflowing. Give
+# the shell the answer directly. `stty` is an external command, so one
+# replacement line is valid in both the sh and csh dotfiles.
+for prof in "$STAGE/root/.profile" "$STAGE/root/.login" \
+            "$STAGE/usr/share/skel/dot.profile" "$STAGE/usr/share/skel/dot.login"; do
+  [ -f "$prof" ] || continue
+  sed -i '' 's|.*resizewin.*|stty rows 24 cols 80 >/dev/null 2>\&1|' "$prof"
+done
+
 cat > "$STAGE/etc/motd.template" <<EOF
 
   $DISTRO_NAME $DISTRO_VERSION "$DISTRO_CODENAME"
