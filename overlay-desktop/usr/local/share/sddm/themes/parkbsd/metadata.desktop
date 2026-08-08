@@ -1,0 +1,18 @@
+[SddmGreeterTheme]
+Name=PARKBSD
+Description=RAVIO cockpit
+Author=PARKVPS
+Type=sddm-theme
+License=BSD-2-Clause
+Version=0.1
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=parkbsd
+Theme-API=2.0
+# QtVersion IS LOAD-BEARING. Without it SDDM 0.21 assumes the Qt5 greeter,
+# looks for /usr/local/bin/sddm-greeter, does not find it (the package ships
+# sddm-greeter-qt6) and silently falls back to its default theme. The only
+# trace is one line in /var/log/sddm.log:
+#   The theme at ".../parkbsd" requires missing "/usr/local/bin/sddm-greeter".
+# It looks exactly like the theme name being wrong in sddm.conf, and is not.
+QtVersion=6

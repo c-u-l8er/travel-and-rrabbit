@@ -188,10 +188,12 @@ run_rc_command "$1"
 EOF
   chmod 0555 "$STAGE/etc/rc.d/parkvps_fccache"
 
-  # Autologin on the VIDEO console only. ttyu0 (serial) keeps its normal login,
-  # so the two consoles do not both hand out root -- the serial one is the one
-  # reachable by anything that can open a unix socket.
-  cat >> "$STAGE/etc/gettytab" <<'EOF'
+  if [ -z "${DISPLAY_MANAGER:-}" ]; then
+    # NO display manager: autologin root on the VIDEO console only and start X
+    # from the shell. ttyu0 (serial) keeps its normal login, so the two consoles
+    # do not both hand out root -- the serial one is reachable by anything that
+    # can open a unix socket.
+    cat >> "$STAGE/etc/gettytab" <<'EOF'
 
 #
 # PARKBSD: autologin root on the graphical console so X can start without a
@@ -201,26 +203,51 @@ EOF
 Pc-autologin|Pc console with autologin:\
 	:al=root:tc=Pc:
 EOF
-  sed -i '' 's|^ttyv0.*|ttyv0	"/usr/libexec/getty Pc-autologin"	xterm	onifexists secure|' \
-    "$STAGE/etc/ttys"
+    sed -i '' 's|^ttyv0.*|ttyv0	"/usr/libexec/getty Pc-autologin"	xterm	onifexists secure|' \
+      "$STAGE/etc/ttys"
 
-  cat > "$STAGE/root/.xinitrc" <<EOF
-#!/bin/sh
-exec $DESKTOP_SESSION
-EOF
-  chmod 0755 "$STAGE/root/.xinitrc"
-
-  # Start X from the login shell rather than exec'ing it. If startx fails, an
-  # exec would end the session, getty would autologin again and try again --
-  # a boot loop whose only symptom is a flickering black screen. Falling
-  # through leaves a root shell on the console and a log to read.
-  cat >> "$STAGE/root/.profile" <<'EOF'
+    # Start X from the login shell rather than exec'ing it. If startx fails, an
+    # exec would end the session, getty would autologin again and try again --
+    # a boot loop whose only symptom is a flickering black screen. Falling
+    # through leaves a root shell on the console and a log to read.
+    cat >> "$STAGE/root/.profile" <<'EOF'
 
 # PARKBSD: the graphical console starts X; the serial console does not.
 if [ "$(tty)" = "/dev/ttyv0" ] && [ -z "$DISPLAY" ]; then
 	startx > /var/log/startx.log 2>&1
 fi
 EOF
+  else
+    echo "==> display manager: $DISPLAY_MANAGER"
+    # A display manager OWNS the graphical console, so the autologin+startx path
+    # above must NOT also exist. Both would fight over ttyv0, and the symptom is
+    # a screen flickering between a greeter and a shell.
+    mkdir -p "$STAGE/etc/rc.conf.d"
+    echo "${DISPLAY_MANAGER}_enable=\"YES\"" > "$STAGE/etc/rc.conf.d/$DISPLAY_MANAGER"
+
+    mkdir -p "$STAGE/usr/local/etc"
+    cat > "$STAGE/usr/local/etc/sddm.conf" <<EOF
+[General]
+DisplayServer=x11
+HaltCommand=/sbin/shutdown -p now
+RebootCommand=/sbin/shutdown -r now
+
+[Theme]
+Current=parkbsd
+
+[Autologin]
+Session=parkbsd
+
+[Users]
+DefaultPath=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+MaximumUid=65000
+MinimumUid=1000
+
+[X11]
+SessionDir=/usr/local/share/xsessions
+UserAuthFile=.Xauthority
+EOF
+  fi
 fi
 
 # An operator-supplied overlay wins over everything above, so local changes
@@ -232,6 +259,50 @@ if [ -d "$OVL" ]; then
   echo "==> applying $(basename "$OVL")/"
   cp -R "$OVL/." "$STAGE/"
   chmod 0755 "$STAGE/root/.xinitrc" 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
+# 5b. the desktop user, and the cockpit config for every home
+#
+# Runs AFTER the overlay because it copies the overlay's own dotfiles. A greeter
+# needs somebody to greet: root is refused for graphical login and the nuageinit
+# user is created with a locked password, so the image carries a real one.
+# ---------------------------------------------------------------------------
+if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
+  echo "==> desktop user ${DESKTOP_USER:-driver}"
+  DU="${DESKTOP_USER:-driver}"
+  echo "${DESKTOP_PASSWORD:-driver}" | \
+    pw -R "$STAGE" useradd "$DU" -u 1010 -c "PARKBSD desktop" \
+       -G wheel,video,operator -m -s /bin/sh -h 0
+fi
+
+if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
+  # ONE SESSION. The icewm package ships its own xsession entries
+  # (icewm-session.desktop, icewm.desktop, xinitrc.desktop) and a greeter picks
+  # among them by sort order, so SDDM launched `icewm-session` directly and the
+  # tint2 panel never started -- a desktop that comes up looking almost right,
+  # missing only the thing that makes it ours. This image ships one desktop, so
+  # it should offer one session; parkbsd.desktop runs parkbsd-session, which
+  # starts the panel AND icewm.
+  rm -f "$STAGE/usr/local/share/xsessions/icewm.desktop" \
+        "$STAGE/usr/local/share/xsessions/icewm-session.desktop" \
+        "$STAGE/usr/local/share/xsessions/xinitrc.desktop"
+fi
+
+if [ "${DESKTOP:-no}" = "yes" ]; then
+  # One cockpit, every home. The canonical copies live under the overlay's
+  # /root; anyone else gets the same files rather than a second definition that
+  # can drift.
+  for home in "$STAGE/root" "$STAGE/home/${DESKTOP_USER:-driver}"; do
+    [ -d "$home" ] || continue
+    [ "$home" = "$STAGE/root" ] || {
+      mkdir -p "$home/.icewm" "$home/.config/tint2"
+      cp -R "$STAGE/root/.icewm/." "$home/.icewm/" 2>/dev/null || true
+      cp "$STAGE/root/.config/tint2/tint2rc" "$home/.config/tint2/" 2>/dev/null || true
+      cp "$STAGE/root/.xinitrc" "$home/" 2>/dev/null || true
+      chown -R 1010:1010 "$home" 2>/dev/null || true
+    }
+  done
 fi
 
 # FreeBSD gates every `KEYWORD: firstboot` rc script -- nuageinit and growfs
