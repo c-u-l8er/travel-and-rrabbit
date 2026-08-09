@@ -268,6 +268,27 @@ if [ -d "$OVL" ]; then
   chmod 0755 "$STAGE/root/.xinitrc" 2>/dev/null || true
 fi
 
+# The RRABBIT shell, if the operator built one. It is a separate repo, so the
+# image takes a BUILT TREE rather than sources: `npx vite build` on a
+# workstation produces dist/, and RRABBIT_DIST points at the repo that holds it.
+# Nothing here needs node -- the bridge is stdlib python and serves the bundle
+# itself.
+#
+# Absent, the rrabbit session entry simply falls back to the T&R cockpit, which
+# is why this is optional rather than a hard dependency.
+if [ -n "${RRABBIT_DIST:-}" ]; then
+  if [ -d "$RRABBIT_DIST/dist" ] && [ -f "$RRABBIT_DIST/bridge.py" ]; then
+    echo "==> installing the RRABBIT shell from $RRABBIT_DIST"
+    mkdir -p "$STAGE/usr/local/share/rrabbit"
+    cp -R "$RRABBIT_DIST/dist" "$STAGE/usr/local/share/rrabbit/"
+    cp "$RRABBIT_DIST/bridge.py" "$STAGE/usr/local/share/rrabbit/bridge.py"
+    chmod 0755 "$STAGE/usr/local/bin/rrabbit-session" 2>/dev/null || true
+  else
+    echo "!!! RRABBIT_DIST=$RRABBIT_DIST has no dist/ + bridge.py -- run: npx vite build" >&2
+    exit 1
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 5b. the desktop user, and the cockpit config for every home
 #

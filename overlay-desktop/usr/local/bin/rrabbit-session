@@ -1,0 +1,74 @@
+#!/bin/sh
+# The RRABBIT session -- the road as the windowing system.
+#
+# This sits BESIDE the T&R cockpit session, never instead of it. If RRABBIT
+# fails, SDDM is still there and "T&R cockpit" still logs you into icewm. A bug
+# in a 3D shell must never be a machine you cannot use.
+#
+# What runs: the bridge (python, stdlib only) serves the built shell AND the
+# seven system gauges on one port; Firefox displays it in kiosk mode. There is
+# no node and no build toolchain on the target -- `npx vite build` happens on a
+# workstation and the image ships its output.
+
+set -u
+
+# Overridable so the session logic can be exercised off-target -- a script that
+# can only be run by booting an image is a script that never gets tested.
+RRABBIT_DIR=${RRABBIT_DIR:-/usr/local/share/rrabbit}
+BRIDGE=$RRABBIT_DIR/bridge.py
+PORT=${RRABBIT_PORT:-8913}
+FALLBACK=${RRABBIT_FALLBACK:-/usr/local/bin/tandr-session}
+BROWSER=${RRABBIT_BROWSER:-firefox}
+URL="http://127.0.0.1:$PORT/"
+
+log() { logger -t rrabbit "$*" 2>/dev/null || echo "rrabbit: $*" >&2; }
+
+if [ ! -f "$BRIDGE" ]; then
+    log "no bridge at $BRIDGE -- falling back to the T&R cockpit"
+    exec "$FALLBACK"
+fi
+
+PYTHON=$(command -v python3 || command -v python3.11 || command -v python)
+if [ -z "$PYTHON" ]; then
+    log "no python -- falling back to the T&R cockpit"
+    exec "$FALLBACK"
+fi
+
+"$PYTHON" "$BRIDGE" "$PORT" >/tmp/rrabbit-bridge.log 2>&1 &
+BRIDGE_PID=$!
+# Kill the bridge whichever way the session ends, or a logout leaves a server
+# holding the port and the next login silently gets the OLD one.
+trap 'kill "$BRIDGE_PID" 2>/dev/null' EXIT HUP INT TERM
+
+# WAIT FOR AN ANSWER, NOT FOR A PORT. PARKVPS learned this the hard way with
+# SLIRP: a TCP connect can succeed against something that is not ready to
+# serve. Fetch a real response before handing the URL to a browser.
+i=0
+while [ "$i" -lt 50 ]; do
+    if command -v fetch >/dev/null 2>&1; then
+        fetch -qo /dev/null "$URL" 2>/dev/null && break
+    elif command -v curl >/dev/null 2>&1; then
+        curl -fsS -o /dev/null "$URL" 2>/dev/null && break
+    else
+        # No fetcher: fall back to a plain wait rather than guessing.
+        sleep 2
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.2
+done
+
+# A profile of our own, so the prefs below cannot disturb the user's Firefox.
+PROFILE=${HOME:-/tmp}/.rrabbit-profile
+mkdir -p "$PROFILE"
+cp -f "$RRABBIT_DIR/user.js" "$PROFILE/user.js" 2>/dev/null || true
+
+# X11, not Wayland: T&R's desktop is Xorg on scfb.
+MOZ_ENABLE_WAYLAND=0
+export MOZ_ENABLE_WAYLAND
+
+log "starting kiosk on $URL"
+"$BROWSER" --profile "$PROFILE" --no-remote --new-instance --kiosk "$URL"
+status=$?
+log "firefox exited ($status) -- session over, back to the greeter"
+exit "$status"
