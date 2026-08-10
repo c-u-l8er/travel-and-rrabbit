@@ -74,6 +74,17 @@ if [ -n "${PORT_PKGS# }" ]; then
   # shellcheck disable=SC2086
   pkg -r "$STAGE" install -y $PORT_PKGS
 fi
+
+# What the stack needs, and only when the stack is coming. The interpreter is
+# most of what the stack costs -- 14 MB of python against a 260 MB python -- so
+# a flavour that is not carrying TRVM should not pay for it. Installed here
+# rather than beside the files further down so it lands before `pkg clean -ay`
+# -- installing after that would leave the package cache in the image.
+if [ -n "${STACK_DIST:-}" ] && [ -n "${STACK_PKGS:-}" ] && [ -n "${STACK_PKGS# }" ]; then
+  echo "==> installing what the verifiable stack runs on"
+  # shellcheck disable=SC2086
+  pkg -r "$STAGE" install -y $STACK_PKGS
+fi
 pkg -r "$STAGE" clean -ay >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
