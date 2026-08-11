@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The download page, and what is not built yet
+    url: https://computedriven.com/#gaps
+    about: >
+      Before filing, the known holes are listed in public — no installer, never booted
+      on real hardware, one implementation. If you hit one of those, a boot report is
+      still useful; we want the size of the hole, not just its existence.

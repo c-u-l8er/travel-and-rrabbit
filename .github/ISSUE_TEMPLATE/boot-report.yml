@@ -1,0 +1,109 @@
+name: Boot report
+description: You ran a T&R image. Tell us what the machine did — especially if it failed.
+title: "boot report: "
+labels: ["boot-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every measurement published about T&R was taken on our machines. That is the
+        weakest kind of evidence there is, and it is not a gap we can close ourselves —
+        by construction, the only thing that closes it is a machine that is not ours.
+
+        **A failed boot is worth more than a successful one.** If it did not come up,
+        that is the report we most want. Nothing here is a testimonial; fill in what you
+        observed and leave the rest blank.
+
+  - type: dropdown
+    id: image
+    attributes:
+      label: Which image
+      options:
+        - "0.3 — server + stack (626 MB)"
+        - "0.2 — bare server (364 MB)"
+        - "desktop — built from source (~5.2 GB)"
+        - "other / modified"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: medium
+    attributes:
+      label: How did you run it
+      options:
+        - "QEMU / KVM"
+        - "Another hypervisor (VirtualBox, VMware, Hyper-V, Proxmox, …)"
+        - "USB stick — real hardware"
+        - "Internal disk — real hardware"
+        - "Cloud / VPS"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happened
+      options:
+        - "Booted to a login prompt"
+        - "Booted, but something was wrong"
+        - "Never reached a login prompt"
+    validations:
+      required: true
+
+  - type: textarea
+    id: host
+    attributes:
+      label: The machine
+      description: >
+        CPU, firmware (UEFI or legacy BIOS), and — if this was a VM — the hypervisor and
+        its version. Enough that somebody could try the same thing.
+      placeholder: |
+        Ryzen 5 5600G, UEFI, Secure Boot off
+        (or) QEMU 9.0.2 / KVM, q35, 2 vCPU, 2 GB
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sha
+    attributes:
+      label: Did the sha256 match what the download page quotes
+      options:
+        - "Yes"
+        - "No — it did not match"
+        - "Did not check"
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`trvs doctor` — paste what it printed"
+      description: >
+        0.3 and the desktop image ship the verifier; 0.2 deliberately does not, so leave
+        this blank for 0.2. Paste the output verbatim, including a failure.
+      render: shell
+
+  - type: textarea
+    id: identity
+    attributes:
+      label: "`trvs id` — the derived identity, if you got one"
+      description: >
+        The point of the exercise: your machine should derive the same `sem-` id ours
+        does. If it derived a different one, that is a significant result — say so.
+      render: shell
+
+  - type: textarea
+    id: broke
+    attributes:
+      label: What broke, or what surprised you
+      description: Anything that did not match the download page. Screenshots welcome.
+
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Before you file
+      options:
+        - label: >
+            I understand this issue is public, and I have checked that the output I
+            pasted has no hostnames, keys or addresses in it that I mind publishing.
+          required: true
