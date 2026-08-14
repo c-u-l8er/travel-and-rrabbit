@@ -1,0 +1,66 @@
+#!/bin/sh
+# compositor-proxy, running IN the operating system.
+#
+# Started by rrabbit-session beside the bridge. This is what makes the ST&RT
+# menu's native rows real: without it they refuse and name the address that did
+# not answer, which is the honest state and not a crash.
+#
+# SOFTWARE GL, BECAUSE A GUEST HAS NO GPU. FreeBSD's drm-kmod ships amdgpu,
+# i915 and radeonkms and nothing paravirtual -- no virtio-gpu, no vgem, no
+# vkms -- so a VM has no /dev/dri at all and cannot be given one without VFIO.
+# Mesa's surfaceless platform needs no device and resolves to llvmpipe, and
+# greenfield refuses a software EGL device unless RENDERER_ALLOW_SOFTWARE says
+# so in as many words. On real hardware with a render node this same line still
+# works; the surfaceless path is a fallback, not an override.
+#
+# Getting here took six FreeBSD-specific fixes in greenfield itself -- see
+# RRABBIT/patches/ and spec §29. They are compiled into the addons under
+# $GFPROXY, not applied here.
+set -eu
+
+GFPROXY=${RRABBIT_GFPROXY:-/usr/local/share/rrabbit/gfproxy}
+NODE=${RRABBIT_NODE:-/usr/local/bin/node}
+
+# THE SAME FILE THE MENU READS, and that is the whole point of the path.
+# The shell fetches `../proxy/applications.json` out of the built bundle, so if
+# the proxy were started with its own copy the two could disagree -- a menu
+# offering a program the proxy will not launch, or launching one the menu never
+# showed. One file, shipped by the shell build, read by both.
+APPLICATIONS=${RRABBIT_APPLICATIONS:-/usr/local/share/rrabbit/dist/proxy/applications.json}
+
+# XDG_RUNTIME_DIR OR THE WAYLAND SOCKET IS NAMED "0" AND NOTHING CAN CONNECT.
+#
+# libwayland builds the display name from this directory, and FreeBSD has no
+# logind to set it -- SDDM does, for a real session, so under rrabbit-session it
+# is already there. Started by hand it is NOT, and the failure is silent and
+# misleading: the proxy comes up and reports WAYLAND_DISPLAY="0" instead of
+# "wayland-0", every native app falls back to X, and what you see is
+# `Gtk-WARNING: cannot open display: :2` -- which sends you looking at XWayland
+# for a fault that is one unset variable here.
+if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR="${TMPDIR:-/tmp}/rrabbit-runtime-$(id -u)"
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    echo "rrabbit-proxy: XDG_RUNTIME_DIR was unset -- using $XDG_RUNTIME_DIR" >&2
+fi
+export XDG_RUNTIME_DIR
+
+[ -d "$GFPROXY" ] || { echo "rrabbit-proxy: no compositor-proxy at $GFPROXY" >&2; exit 1; }
+[ -x "$NODE" ]    || { echo "rrabbit-proxy: no node at $NODE" >&2; exit 1; }
+[ -f "$APPLICATIONS" ] || { echo "rrabbit-proxy: no program list at $APPLICATIONS" >&2; exit 1; }
+
+cd "$GFPROXY" || exit 1
+
+RENDERER_ALLOW_SOFTWARE=1 \
+GST_GL_WINDOW=surfaceless \
+GST_GL_PLATFORM=egl \
+GST_GL_API=gles2 \
+LIBGL_ALWAYS_SOFTWARE=1 \
+GALLIUM_DRIVER=llvmpipe \
+exec "$NODE" proxy/proxy-cli.js \
+    --applications="$APPLICATIONS" \
+    --allow-origin="http://127.0.0.1:${RRABBIT_PORT:-8913}" \
+    --bind-ip=127.0.0.1 \
+    --bind-port=8912 \
+    --base-url=ws://127.0.0.1:8912 \
+    --encoder=x264

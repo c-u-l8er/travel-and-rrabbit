@@ -19,9 +19,70 @@ BRIDGE=$RRABBIT_DIR/bridge.py
 PORT=${RRABBIT_PORT:-8913}
 FALLBACK=${RRABBIT_FALLBACK:-/usr/local/bin/tandr-session}
 BROWSER=${RRABBIT_BROWSER:-firefox}
-URL="http://127.0.0.1:$PORT/"
+URL="http://127.0.0.1:$PORT/m2/"
+
+# WHERE THE BROWSER'S PID GOES, so the dashboard's power key can end this
+# session. The shell is a page in a kiosk; it cannot log anybody out, and
+# `window.close()` will not close the last window it is running in. What CAN end
+# the session is this script returning, and this script is sitting in `wait` on
+# the browser -- so the way out is to signal the browser, and the bridge is the
+# only process here that is both asked and permitted to do it.
+#
+# THE FILE IS THE PERMISSION. No pidfile, no logout: a bridge started by hand on
+# a workstation refuses and says so, rather than reaching for whatever Firefox it
+# can find and killing the one somebody is working in.
+BROWSER_PIDFILE=${RRABBIT_BROWSER_PIDFILE:-/tmp/rrabbit-browser.pid}
+# Handed to the bridge as the RESOLVED name, not as whatever the operator may or
+# may not have set: the bridge checks the pid it is about to signal against this
+# before signalling it, and a default that disagrees with the browser actually
+# running turns that check into a refusal of the real thing.
+RRABBIT_BROWSER_PIDFILE=$BROWSER_PIDFILE
+RRABBIT_BROWSER=$BROWSER
+export RRABBIT_BROWSER_PIDFILE RRABBIT_BROWSER
 
 log() { logger -t rrabbit "$*" 2>/dev/null || echo "rrabbit: $*" >&2; }
+
+# WHERE THE NATIVE PROGRAMS COME FROM.
+#
+# This image carries no compositor-proxy yet, so the ST&RT menu's native rows
+# have nothing to talk to and every one of them refuses. That is the honest state
+# and it is what a downloaded image should show until the proxy ships INSIDE it.
+#
+# `RRABBIT_PROXY` points the shell at a proxy somewhere else -- typically the
+# development host, which under QEMU's user-mode networking answers at the
+# default gateway (`http://10.0.2.2:8912`) with nothing bound beyond loopback on
+# the host side. Real applications then open on the road, and they are the HOST's
+# applications, forwarded in.
+#
+# OFF BY DEFAULT, DELIBERATELY, AND THIS WAS CHANGED AFTER BEING WRONG ONCE.
+# It first auto-detected the QEMU gateway and switched itself on. That is right
+# for this laptop and wrong for the product: a stranger who downloads T&R has no
+# proxy on their gateway, so the menu would advertise programs, take the click,
+# and fail -- and the address in the refusal would name a machine that is not
+# theirs. Worse than refusing plainly. An operator who wants the bridge asks for
+# it; nobody gets it by accident.
+proxy_url() {
+    printf '%s' "${RRABBIT_PROXY:-}"
+}
+
+PROXY=$(proxy_url)
+if [ -n "$PROXY" ]; then
+    URL="$URL?proxy=$PROXY"
+    log "native programs will be launched through $PROXY (RRABBIT_PROXY)"
+else
+    URL="$URL?"
+    log "no proxy configured -- native programs will refuse, web clients still open"
+fi
+
+# A WAY TO ASK THE KIOSK A QUESTION. There is no address bar and no devtools in
+# here, so the shell's query-string diagnostics -- `?report=<secs>` above all,
+# which posts what it managed to do to /api/report -- would otherwise be
+# unreachable on the only machine that matters. Set it in the session's
+# environment, or edit this line on a running guest and log out and in.
+if [ -n "${RRABBIT_URL_EXTRA:-}" ]; then
+    URL="$URL&$RRABBIT_URL_EXTRA"
+    log "extra query: $RRABBIT_URL_EXTRA"
+fi
 
 if [ ! -f "$BRIDGE" ]; then
     log "no bridge at $BRIDGE -- falling back to the T&R cockpit"
@@ -34,11 +95,35 @@ if [ -z "$PYTHON" ]; then
     exec "$FALLBACK"
 fi
 
+# THE COMPOSITOR PROXY, IN THIS OPERATING SYSTEM. Started beside the bridge, so
+# the ST&RT menu's native rows have something LOCAL to talk to. The windows are
+# meant to be THIS machine's programs; a proxy on a development host is a bridge
+# for building, not a product -- which is why this is separate from the
+# `RRABBIT_PROXY` handling above and does not turn it on.
+#
+# Absent, nothing breaks: the native rows refuse and name the address that did
+# not answer, and the web clients still open.
+#
+# This lived only as a hand edit on one running guest for a while, so the repo's
+# copy of this script did not start it and a rebuilt image shipped without it.
+if [ -x /usr/local/bin/rrabbit-proxy ]; then
+    /usr/local/bin/rrabbit-proxy >/tmp/rrabbit-proxy.log 2>&1 &
+    RRABBIT_PROXY_PID=$!
+    log "compositor-proxy started (pid $RRABBIT_PROXY_PID)"
+else
+    log "no compositor-proxy installed -- native programs will refuse"
+fi
+
 "$PYTHON" "$BRIDGE" "$PORT" >/tmp/rrabbit-bridge.log 2>&1 &
 BRIDGE_PID=$!
 # Kill the bridge whichever way the session ends, or a logout leaves a server
 # holding the port and the next login silently gets the OLD one.
-trap 'kill "$BRIDGE_PID" 2>/dev/null' EXIT HUP INT TERM
+#
+# AND CLEAR THE PIDFILE ON THE WAY OUT. It is a permission to signal a process,
+# so leaving one behind that names a number nobody owns any more is the whole
+# reason the bridge has to check the name as well -- belt and braces, and this
+# is the belt.
+trap 'kill "$BRIDGE_PID" "${RRABBIT_PROXY_PID:-}" 2>/dev/null; rm -f "$BROWSER_PIDFILE"' EXIT HUP INT TERM
 
 # WAIT FOR AN ANSWER, NOT FOR A PORT. PARKVPS learned this the hard way with
 # SLIRP: a TCP connect can succeed against something that is not ready to
@@ -63,12 +148,58 @@ PROFILE=${HOME:-/tmp}/.rrabbit-profile
 mkdir -p "$PROFILE"
 cp -f "$RRABBIT_DIR/user.js" "$PROFILE/user.js" 2>/dev/null || true
 
+# THE KIOSK WINDOW HAS TO BE TOLD HOW BIG THE SCREEN IS.
+#
+# There is no window manager in this session -- the road IS the window manager,
+# which is the whole point of the thing -- and `--kiosk` asks to be full-screen
+# by setting _NET_WM_STATE_FULLSCREEN, which is a request TO a window manager.
+# With nobody listening, Firefox keeps whatever size it opened at. Its profile
+# recorded `sizemode: maximized` and no width or height at all, so on a 3840x2160
+# framebuffer the shell drew into a ~1280-wide corner with black around it, and
+# on the 1280x800 framebuffer it was built against that looked exactly right.
+#
+# So: ask X how big the screen is and write the answer into the profile before
+# Firefox reads it. `xrdb -symbols` is the query -- it ships with X itself, and
+# this image has no xrandr, no xdpyinfo and no xwininfo to ask instead.
+#
+# Written EVERY session, not once: Firefox rewrites xulstore.json when it exits,
+# and the screen may be a different size next time anyway.
+#
+# `sizemode: normal` is load-bearing. Left at `maximized`, Firefox asks a window
+# manager that is not there and ignores the width and height below.
+if command -v xrdb >/dev/null 2>&1; then
+    SCREEN_W=$(xrdb -symbols 2>/dev/null | sed -n 's/^-DWIDTH=//p')
+    SCREEN_H=$(xrdb -symbols 2>/dev/null | sed -n 's/^-DHEIGHT=//p')
+fi
+if [ -n "${SCREEN_W:-}" ] && [ -n "${SCREEN_H:-}" ]; then
+    printf '{"chrome://browser/content/browser.xhtml":{"main-window":{"screenX":"0","screenY":"0","width":"%s","height":"%s","sizemode":"normal"}}}\n' \
+        "$SCREEN_W" "$SCREEN_H" > "$PROFILE/xulstore.json"
+    log "kiosk window sized to the screen: ${SCREEN_W}x${SCREEN_H}"
+else
+    log "could not read the screen size from X -- the kiosk will use its own default"
+fi
+
 # X11, not Wayland: T&R's desktop is Xorg on scfb.
 MOZ_ENABLE_WAYLAND=0
 export MOZ_ENABLE_WAYLAND
 
 log "starting kiosk on $URL"
-"$BROWSER" --profile "$PROFILE" --no-remote --new-instance --kiosk "$URL"
+# IN THE BACKGROUND AND THEN WAITED ON, which is the same thing as running it in
+# the foreground except that this script now knows the pid -- and knowing the pid
+# is what makes the power key on the dashboard possible at all. `wait` returns
+# the browser's own status, so the line below still reports what it always did.
+"$BROWSER" --profile "$PROFILE" --no-remote --new-instance --kiosk "$URL" &
+BROWSER_PID=$!
+# THE NAME IS RECORDED BESIDE THE PID, AT THE MOMENT IT IS TRUE. The bridge
+# checks the live process against it before signalling, which is what stops a
+# stale file from arming that endpoint against whatever inherited the number.
+# Asked here rather than assumed there because `firefox` may be a wrapper, and
+# then the process this script is waiting on is not called "firefox" at all.
+BROWSER_COMM=$(ps -o comm= -p "$BROWSER_PID" 2>/dev/null | awk 'NR==1{n=split($1,a,"/"); print a[n]}')
+echo "$BROWSER_PID $BROWSER_COMM" > "$BROWSER_PIDFILE"
+log "kiosk is pid $BROWSER_PID ($BROWSER_COMM) -- logout signals it via $BROWSER_PIDFILE"
+wait "$BROWSER_PID"
 status=$?
+rm -f "$BROWSER_PIDFILE"
 log "firefox exited ($status) -- session over, back to the greeter"
 exit "$status"
