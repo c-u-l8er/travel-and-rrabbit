@@ -1,0 +1,83 @@
+<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+  <name>tandr-preview</name>
+  
+  <memory unit='MiB'>4096</memory>
+  <currentMemory unit='MiB'>4096</currentMemory>
+  <vcpu placement='static'>4</vcpu>
+
+  <!-- UEFI, matching how PARKVPS boots this image. `firmware='efi'` lets
+       libvirt pick OVMF and manage the per-domain NVRAM itself, rather than
+       naming a path that moves with every edk2 release. -->
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='host-passthrough' check='none' migratable='off'/>
+  <clock offset='utc'/>
+
+  <devices>
+    <!-- virtio-blk, same as PARKVPS. -->
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='writeback' discard='unmap'/>
+      <source file='/home/travis/ProjectAmp2/PARKVPS/var/images/tandr-preview.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+
+    <!-- User-mode networking. Session-mode libvirt has no bridge and needs no
+         root for this, which is the whole reason this domain runs under
+         qemu:///session — see the note in the report. -->
+
+    <!-- THE SCREEN. `vga` and 32 MB deliberately: the image's Xorg is
+         configured for the `scfb` dumb framebuffer (build-image.sh), so no
+         amount of virtio-gpu or 3D acceleration reaches it. Changing this model
+         without also changing the X driver in the image buys nothing. -->
+    <video>
+      <model type='vga' vram='32768' heads='1'/>
+    </video>
+    <graphics type='spice' autoport='yes' listen='127.0.0.1'>
+      <image compression='off'/>
+    </graphics>
+
+    <!-- ABSOLUTE pointer. Without a tablet the guest gets relative motion and
+         the cursor in the viewer never lines up with the cursor in the guest —
+         which on a shell whose whole interface is clicking signs is unusable. -->
+    <input type='tablet' bus='usb'/>
+    <input type='keyboard' bus='usb'/>
+    <controller type='usb' model='qemu-xhci' ports='8'/>
+
+    <!-- The boot log to a file. There is no ssh into this domain (user-mode
+         networking, no forward) and `virsh console` needs a terminal this
+         session does not have, so rc.d's own output is the only way to see why
+         a service did or did not start. -->
+    <serial type='file'>
+      <source path='/tmp/claude-1000/-home-travis-ProjectAmp2/bfe182d2-8d74-4cc7-9c0e-bbb184bea154/scratchpad/console.log'/>
+      <target port='0'/>
+    </serial>
+    <console type='file'>
+      <source path='/tmp/claude-1000/-home-travis-ProjectAmp2/bfe182d2-8d74-4cc7-9c0e-bbb184bea154/scratchpad/console.log'/>
+      <target type='serial' port='0'/>
+    </console>
+    <channel type='spicevmc'>
+      <target type='virtio' name='com.redhat.spice.0'/>
+    </channel>
+    <memballoon model='virtio'/>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+  <!-- SSH INTO THE PREVIEW. libvirt's own port forwarding for user-mode
+       networking needs passt, which is not installed, so the netdev is declared
+       directly. Without a way in there is no reading a log from this guest at
+       all: no forward, and virsh console needs a terminal. -->
+  <qemu:commandline>
+    <qemu:arg value='-netdev'/>
+    <qemu:arg value='user,id=n1,hostfwd=tcp:127.0.0.1:2224-:22'/>
+    <qemu:arg value='-device'/>
+    <qemu:arg value='virtio-net-pci,netdev=n1,bus=pcie.0,addr=0x1e'/>
+  </qemu:commandline>
+</domain>

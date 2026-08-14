@@ -100,9 +100,81 @@ Note the serial console is marked `secure` and root has no password, so anyone
 who can reach the console is root. That is fine for a disposable local VM and
 wrong the moment one listens on a real address.
 
+## Carrying the verifiable stack
+
+Set `TRVM_DIST` and `TRVS_DIST` and the image ships TRVM and `trvs` — the
+runtime and the verifier that turns a run into a bundle somebody else can
+replay. Both are pure python against the standard library, so nothing is built
+on the target; `ic32`, the native runtime, is C and is compiled **on the FreeBSD
+builder**, so the image gets a `FreeBSD 15.1` binary and still needs no compiler
+of its own.
+
+```bash
+TRVM_DIST=../TRVM TRVS_DIST=../TRAAVIIS ./make.sh tandr.conf builder
+```
+
+Measured 2026-08-10, the same server config built both ways:
+
+| | bare | + stack |
+|---|---|---|
+| image | 363 MiB | 625 MiB |
+| packages | 50 | 56 |
+| `trvs doctor` | not installed | `status ready` |
+
+The stack is 14 MB of it. The rest is the interpreter, which is why `python3`
+lives in `STACK_PKGS` rather than `PORT_PKGS` — a bare server should not pay
+260 MB to ship sshd and cron, and an image without the stack has no `trvs` at
+all rather than one that exits `python3: not found`.
+
+## Two sessions, and which one you get
+
+With `RRABBIT_DIST` set, the image ships **two** desktop sessions: the **T&R
+cockpit** (icewm + the panel) and **RRABBIT (the road)**. The greeter names the
+one it will start in the bottom-right corner, and **F2** switches between them.
+
+The default is the cockpit, and that is a decision the build writes down rather
+than an accident. A greeter picks among sessions by sort order, `rrabbit.desktop`
+sorts before `tandr.desktop`, and measured on a fresh image SDDM duly preselected
+the 3D shell with no way to choose otherwise — which is the opposite of what
+`rrabbit-session` says it is for. The build now seeds SDDM's state file; set
+`DEFAULT_SESSION=rrabbit` in the config if you want the road on first login.
+
 ## Name
 
-**T&R** is Travel & RRABBIT. The ampersand is a display name only — it is
-invalid in a hostname and needs quoting in every path that touches it, so
-`DISTRO_SLUG` (`tandr`) is what filenames, the GPT label and the hostname are
-built from.
+**T&R** is **Travel & RRABBIT** — two of them, with opposite appetites.
+
+**Travel** wants to *navigate*. Travel is the one who drives: the road under
+you, the camera, the flight into a window and the chord back out, the districts
+you switch between. Travel's question is always *where am I, and how do I get
+to the other thing*.
+
+**RRABBIT** wants to *be the windows*. Not to display them — to be them.
+RRABBIT is the signs standing on the road, the surface that flattens to
+pixel-exact 1:1 under you, the rect in the ledger that decides whether a click
+belongs to it. RRABBIT's question is *what am I, and where do I stand*.
+
+Neither is much use alone. A navigator with nothing to navigate is a camera in
+an empty scene; windows with nobody driving are a desktop. The ampersand is the
+whole idea: **one likes going, the other likes being gone to.**
+
+### The code does not make that split yet
+
+Worth saying rather than implying otherwise. Today the two repositories are
+divided by *layer*, not by personality:
+
+- `travel-and-rrabbit` (this repo) is the **distribution** — the image, the
+  boot path, the sessions. It carries Travel's name and is not Travel.
+- [`RRABBIT`](https://github.com/c-u-l8er/RRABBIT) holds **both halves**: the
+  camera, flight and input that are Travel, and the surfaces, signs and ledger
+  that are RRABBIT.
+
+So the name describes a separation the source has not made. That is a fair
+thing to notice and not obviously a fault — but anyone reading `m2/shell.js`
+looking for Travel will find them tangled, and should know that before going
+in.
+
+### The ampersand is a display name only
+
+`&` is invalid in a hostname and needs quoting in every path that touches it,
+so `DISTRO_SLUG` (`tandr`) is what filenames, the GPT label and the hostname
+are built from. Only prose gets the ampersand.
