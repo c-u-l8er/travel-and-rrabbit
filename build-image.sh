@@ -187,19 +187,54 @@ Section "Files"
 EndSection
 EOF
 
-  # pkg's post-install scripts do not reliably build a fontconfig cache when
-  # installing into a staged root with `pkg -r`, so do it on first boot. Without
-  # a cache fontconfig still works by scanning, but the first X start pays for
-  # it every single time.
+  # pkg's post-install scripts do not reliably run when installing into a staged
+  # root with `pkg -r`, so the caches they would have built get built on first
+  # boot instead.
+  #
+  # THIS IS NOT ONLY A SPEED PROBLEM, and it was written as if it were. Without
+  # a fontconfig cache fontconfig still works by scanning, so the cost is time.
+  # The MIME database is not like that: without
+  # `/usr/local/share/mime/mime.cache`, gdk-pixbuf recognises **no image format
+  # at all** -- not SVG, not even a 409-byte PNG -- and every GTK application
+  # dies on its first themed icon in a `g_assert` that cannot be caught:
+  #
+  #   Gtk:ERROR:gtkiconhelper.c:495: Failed to load .../image-missing.svg:
+  #   Unrecognized image file format
+  #   Bail out!
+  #
+  # mousepad aborted with SIGABRT and firefox with SIGSEGV inside 200 ms, and
+  # `gtk3-demo` did the same on a plain X session, so it is the image and not the
+  # road. It reads like a broken gdk-pixbuf -- the library dlopens no loader and
+  # exports no builtin -- and it is one missing cache file.
+  #
+  # The service keeps the name `parkvps_fccache` because both flavour configs
+  # name it in RC_SERVICES; it builds all of them now.
   cat > "$STAGE/etc/rc.d/parkvps_fccache" <<'EOF'
 #!/bin/sh
 # PROVIDE: parkvps_fccache
 # REQUIRE: FILESYSTEMS
 # BEFORE: LOGIN
 # KEYWORD: firstboot
+#
+# The desktop caches `pkg -r` did not build. Each guarded, because a missing
+# tool must not stop the others -- and none of them is fatal to boot.
 . /etc/rc.subr
 name="parkvps_fccache"
-start_cmd="/usr/local/bin/fc-cache -f >/dev/null 2>&1 || true"
+build_caches() {
+    [ -x /usr/local/bin/fc-cache ] && /usr/local/bin/fc-cache -f >/dev/null 2>&1
+    # Without this, GTK cannot load a single image. See build-image.sh.
+    [ -x /usr/local/bin/update-mime-database ] && \
+        /usr/local/bin/update-mime-database /usr/local/share/mime >/dev/null 2>&1
+    [ -x /usr/local/bin/gdk-pixbuf-query-loaders ] && \
+        /usr/local/bin/gdk-pixbuf-query-loaders --update-cache >/dev/null 2>&1
+    [ -x /usr/local/bin/gtk-update-icon-cache ] && \
+        for d in /usr/local/share/icons/*/; do
+            [ -f "$d/index.theme" ] && \
+                /usr/local/bin/gtk-update-icon-cache -q -t -f "$d" >/dev/null 2>&1
+        done
+    return 0
+}
+start_cmd="build_caches"
 stop_cmd=":"
 load_rc_config $name
 run_rc_command "$1"
@@ -300,6 +335,53 @@ if [ -n "${RRABBIT_DIST:-}" ]; then
   fi
 fi
 
+# The verifiable stack: TRVM (the runtime) and TRAAVIIS (`trvs`, the verifier
+# that turns a run into a bundle somebody else can replay). Both are pure python
+# against the standard library, which is the only reason a distro image can
+# carry them without carrying a package manager for them.
+#
+# `forge` finds the native runtime at ../runtime/c/ic32 RELATIVE TO ITSELF, so
+# the two must stay siblings under one root -- this is a layout, not a pile of
+# files.
+if [ -n "${STACK_DIST:-}" ]; then
+  if [ ! -d "$STACK_DIST/trvm/forge" ] || [ ! -d "$STACK_DIST/traaviis" ]; then
+    echo "!!! STACK_DIST=$STACK_DIST has no trvm/forge + traaviis" >&2
+    exit 1
+  fi
+  echo "==> installing the verifiable stack (TRVM + trvs)"
+  mkdir -p "$STAGE/usr/local/lib/trvm" "$STAGE/usr/local/lib/traaviis"
+  cp -R "$STACK_DIST/trvm/forge" "$STAGE/usr/local/lib/trvm/"
+  cp -R "$STACK_DIST/trvm/runtime" "$STAGE/usr/local/lib/trvm/"
+  cp -R "$STACK_DIST/traaviis" "$STAGE/usr/local/lib/traaviis/"
+
+  # ic32 is C, and the copy on a Linux workstation is a Linux ELF that a FreeBSD
+  # guest cannot run. This build host IS FreeBSD, so compile it here and ship a
+  # binary -- the image needs no compiler, which is the whole point of pkgbase.
+  if [ -f "$STACK_DIST/trvm/runtime/c/ic32.c" ]; then
+    if cc -O2 -o "$STAGE/usr/local/lib/trvm/runtime/c/ic32" \
+          "$STACK_DIST/trvm/runtime/c/ic32.c" 2>/dev/null; then
+      echo "    ic32: compiled for $(uname -m) on this builder"
+    else
+      # Named, not swallowed: trvs still runs on the reference interpreter, and
+      # `trvs doctor` will say ic32 is missing rather than pretend otherwise.
+      rm -f "$STAGE/usr/local/lib/trvm/runtime/c/ic32"
+      echo "!!! ic32 did NOT compile -- shipping the reference interpreter only" >&2
+    fi
+  fi
+
+  # One entry point that knows the layout, so nothing on the image has to be
+  # told where the engine lives.
+  cat > "$STAGE/usr/local/bin/trvs" <<'EOF'
+#!/bin/sh
+# trvs -- the verifiable world terminal, wired to the engine this image ships.
+TRVM_ROOT=/usr/local/lib/trvm
+export TRVS_FORGE_DIR="${TRVS_FORGE_DIR:-$TRVM_ROOT/forge}"
+export PYTHONPATH="/usr/local/lib/traaviis:$TRVM_ROOT/runtime/python${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m traaviis.cli "$@"
+EOF
+  chmod 0755 "$STAGE/usr/local/bin/trvs"
+fi
+
 # ---------------------------------------------------------------------------
 # 5b. the desktop user, and the cockpit config for every home
 #
@@ -343,6 +425,32 @@ if [ "${DESKTOP:-no}" = "yes" ] && [ -n "${DISPLAY_MANAGER:-}" ]; then
   rm -f "$STAGE/usr/local/share/xsessions/icewm.desktop" \
         "$STAGE/usr/local/share/xsessions/icewm-session.desktop" \
         "$STAGE/usr/local/share/xsessions/xinitrc.desktop"
+
+  # SAY WHICH SESSION IS THE DEFAULT. The block above removed icewm's entries
+  # because a greeter picks among sessions by sort order; with RRABBIT
+  # installed this image ships two of its OWN, and `rrabbit.desktop` sorts
+  # before `tandr.desktop`. Measured on a fresh boot: SDDM preselected RRABBIT,
+  # the greeter's session label was blank, and there was no way to pick the
+  # cockpit -- so the shell's own rule, "beside the cockpit, never instead of
+  # it", was false on the only screen where it is decided.
+  #
+  # Seeding SDDM's state file makes the default a decision taken here rather
+  # than an alphabetical accident. The greeter's F2 still reaches RRABBIT, and
+  # SDDM overwrites this the first time anyone logs in, so it sets the initial
+  # state without pinning it.
+  if [ -n "${RRABBIT_DIST:-}" ]; then
+    mkdir -p "$STAGE/var/lib/sddm"
+    cat > "$STAGE/var/lib/sddm/state.conf" <<EOF
+[Last]
+Session=/usr/local/share/xsessions/${DEFAULT_SESSION:-tandr}.desktop
+EOF
+    chmod 0644 "$STAGE/var/lib/sddm/state.conf"
+    # The TARGET's sddm uid, read out of the staged passwd -- `chown sddm`
+    # would resolve against the builder, where that user need not exist.
+    sddm_uid=$(awk -F: '$1=="sddm"{print $3":"$4}' "$STAGE/etc/passwd" 2>/dev/null)
+    [ -n "$sddm_uid" ] && chown -R "$sddm_uid" "$STAGE/var/lib/sddm" 2>/dev/null || true
+    echo "==> default session: ${DEFAULT_SESSION:-tandr} (F2 at the greeter for the other)"
+  fi
 fi
 
 if [ "${DESKTOP:-no}" = "yes" ]; then

@@ -95,9 +95,95 @@ echo "==> pushing tree to $SSH_USER@$SSH_HOST:$SSH_PORT"
 ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" 'rm -rf /tmp/tandr'
 scp -q -P "$SSH_PORT" "${SSHOPTS[@]}" -r "$HERE" "$SSH_USER@$SSH_HOST:/tmp/tandr"
 
+#-------------------------------------------------------------- the RRABBIT shell
+# build-image.sh reads RRABBIT_DIST as a path on the machine doing the build,
+# and that machine is never this one -- the image has to be assembled on
+# FreeBSD. So carrying the bytes across is the whole job, and without it there
+# is no route at all from a shell built on a workstation to a shell inside an
+# image.
+#
+# Opt-in, deliberately. A 3D shell that shipped because it happened to be in the
+# next directory is not a decision anyone made.
+REMOTE_RRABBIT=""
+if [ -n "${RRABBIT_DIST:-}" ]; then
+  RRABBIT_DIST="$(cd "$RRABBIT_DIST" 2>/dev/null && pwd)" || {
+    echo "RRABBIT_DIST is not a directory: ${RRABBIT_DIST}" >&2; exit 1; }
+  if [ ! -d "$RRABBIT_DIST/dist" ] || [ ! -f "$RRABBIT_DIST/bridge.py" ]; then
+    echo "RRABBIT_DIST=$RRABBIT_DIST has no dist/ + bridge.py." >&2
+    echo "Build it there first: npm run build" >&2
+    exit 1
+  fi
+
+  # A dist older than its sources is the failure this project has already paid
+  # for once: the built bundle was not the shell that had been tested, and
+  # nothing errored. Warn loudly rather than silently shipping yesterday.
+  # Only what vite actually reads. tools/ and patches/ are build machinery and
+  # are routinely newer than a perfectly current bundle -- warning on those
+  # would train the operator to ignore the warning.
+  src_roots=""
+  for d in m0 m1 m2 clients vite.config.ts; do
+    [ -e "$RRABBIT_DIST/$d" ] && src_roots="$src_roots $RRABBIT_DIST/$d"
+  done
+  # shellcheck disable=SC2086
+  newest_src=$(find $src_roots -type f -newer "$RRABBIT_DIST/dist" -print 2>/dev/null | head -3)
+  if [ -n "$newest_src" ]; then
+    echo "!!! RRABBIT sources are NEWER than dist/ -- this image would ship a stale shell:" >&2
+    echo "$newest_src" | sed 's|^|      |' >&2
+    echo "    run 'npm run build' in $RRABBIT_DIST, or set RRABBIT_STALE_OK=1" >&2
+    [ -n "${RRABBIT_STALE_OK:-}" ] || exit 1
+  fi
+
+  echo "==> pushing the RRABBIT shell from $RRABBIT_DIST"
+  REMOTE_RRABBIT=/tmp/tandr-rrabbit
+  ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" \
+      "rm -rf $REMOTE_RRABBIT && mkdir -p $REMOTE_RRABBIT"
+  scp -q -P "$SSH_PORT" "${SSHOPTS[@]}" -r \
+      "$RRABBIT_DIST/dist" "$RRABBIT_DIST/bridge.py" \
+      "$SSH_USER@$SSH_HOST:$REMOTE_RRABBIT/"
+fi
+
+#---------------------------------------------------------- the verifiable stack
+# TRVM (the runtime) and TRAAVIIS (`trvs`, the verifier). Both are pure python
+# with no third-party dependencies, so they need no build on the target -- but
+# `ic32`, the native runtime, is C and has to be compiled FOR FreeBSD. The
+# builder IS FreeBSD, so build-image.sh compiles it there and the image ships a
+# binary rather than a compiler.
+#
+# Only what is needed goes across. TRVM/runtime is 2.4 GB, essentially all of it
+# a mojo toolchain that has nothing to do with running a world; the parts that
+# do are runtime/python and runtime/c, which are 400 KB together.
+REMOTE_STACK=""
+if [ -n "${TRVM_DIST:-}" ] || [ -n "${TRVS_DIST:-}" ]; then
+  [ -n "${TRVM_DIST:-}" ] && [ -n "${TRVS_DIST:-}" ] || {
+    echo "TRVM_DIST and TRVS_DIST go together -- trvs without an engine reports" >&2
+    echo "'could not locate the Forge/TRVM engine' and is worth nothing on the image." >&2
+    exit 1; }
+  TRVM_DIST="$(cd "$TRVM_DIST" && pwd)"
+  TRVS_DIST="$(cd "$TRVS_DIST" && pwd)"
+  for need in "$TRVM_DIST/forge" "$TRVM_DIST/runtime/python" "$TRVM_DIST/runtime/c/ic32.c" \
+              "$TRVS_DIST/traaviis"; do
+    [ -e "$need" ] || { echo "missing: $need" >&2; exit 1; }
+  done
+
+  echo "==> pushing the verifiable stack (TRVM + trvs)"
+  REMOTE_STACK=/tmp/tandr-stack
+  ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" \
+      "rm -rf $REMOTE_STACK && mkdir -p $REMOTE_STACK/trvm/runtime"
+  # Streamed, because the excludes matter more than the convenience of scp.
+  tar czf - --exclude=dist --exclude=__pycache__ --exclude=.git -C "$TRVM_DIST" forge \
+    | ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" "tar xzf - -C $REMOTE_STACK/trvm"
+  tar czf - --exclude=__pycache__ -C "$TRVM_DIST/runtime" python c \
+    | ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" "tar xzf - -C $REMOTE_STACK/trvm/runtime"
+  tar czf - --exclude=__pycache__ -C "$TRVS_DIST" traaviis \
+    | ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" "tar xzf - -C $REMOTE_STACK"
+fi
+
 echo "==> building"
+# env, not a prefix assignment: sudo would otherwise drop it. An empty value is
+# the same as unset to build-image.sh, so the no-shell path needs no branch.
 ssh -p "$SSH_PORT" "${SSHOPTS[@]}" "$SSH_USER@$SSH_HOST" \
-    "sudo sh /tmp/tandr/build-image.sh /tmp/tandr/$CONF"
+    "sudo env RRABBIT_DIST='$REMOTE_RRABBIT' STACK_DIST='$REMOTE_STACK' \
+     sh /tmp/tandr/build-image.sh /tmp/tandr/$CONF"
 
 echo "==> streaming image back"
 # Compressed in flight: the raw image is mostly zeros, so this is many times
