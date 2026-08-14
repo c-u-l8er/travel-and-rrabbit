@@ -165,6 +165,25 @@ EOF
 if [ "${DESKTOP:-no}" = "yes" ]; then
   echo "==> configuring the desktop"
 
+  # ASK UEFI FOR A BIG FRAMEBUFFER, because nothing after this point can.
+  #
+  # scfb draws on whatever mode the EFI GOP was left in and cannot change it at
+  # runtime -- no DRM, no RandR, no xrandr. So the desktop's resolution is
+  # decided here, in the loader, or not at all. Left alone this image came up at
+  # 1280x800 and stayed there on a 4K monitor, with the whole desktop in the
+  # top-left eighth of the screen and black around it.
+  #
+  # `efi_max_resolution` is a CEILING, not a demand: the loader picks the largest
+  # mode the firmware offers that does not exceed it, so a machine whose display
+  # tops out lower still gets its own best mode. Measured under OVMF with the
+  # `vga` adapter: 2160p asks for and gets 3840x2160.
+  #
+  # THE ADAPTER HAS TO HAVE THE MEMORY FOR IT. 3840*2160*4 is 31.6 MiB, so the
+  # 32 MB this image was previously run with had nothing to spare; `contrib/
+  # tandr-libvirt.xml` asks for 64 MB. A framebuffer the card cannot hold means
+  # the mode is simply not offered and you silently get a smaller one.
+  echo 'efi_max_resolution="2160p"' >> "$STAGE/boot/loader.conf"
+
   # scfb draws on the framebuffer UEFI already programmed, so there is no mode
   # setting to do and no DRM module to match against the kernel. Xorg will not
   # pick it on its own when a VESA driver is also plausible, so name it.

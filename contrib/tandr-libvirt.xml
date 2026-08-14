@@ -32,12 +32,17 @@
          root for this, which is the whole reason this domain runs under
          qemu:///session — see the note in the report. -->
 
-    <!-- THE SCREEN. `vga` and 32 MB deliberately: the image's Xorg is
-         configured for the `scfb` dumb framebuffer (build-image.sh), so no
-         amount of virtio-gpu or 3D acceleration reaches it. Changing this model
-         without also changing the X driver in the image buys nothing. -->
+    <!-- THE SCREEN. `vga` deliberately: the image's Xorg is configured for the
+         `scfb` dumb framebuffer (build-image.sh), so no amount of virtio-gpu or
+         3D acceleration reaches it. Changing this model without also changing
+         the X driver in the image buys nothing.
+
+         64 MB, not 32: the image asks the loader for a 2160p framebuffer and
+         3840x2160x4 is 31.6 MiB, which 32 MB has nothing to spare over. A mode
+         the adapter cannot hold is not offered, and the failure is silent -- you
+         get a smaller screen and no message anywhere saying why. -->
     <video>
-      <model type='vga' vram='32768' heads='1'/>
+      <model type='vga' vram='65536' heads='1'/>
     </video>
     <graphics type='spice' autoport='yes' listen='127.0.0.1'>
       <image compression='off'/>

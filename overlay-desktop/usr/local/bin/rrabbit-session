@@ -175,6 +175,32 @@ if [ -n "${SCREEN_W:-}" ] && [ -n "${SCREEN_H:-}" ]; then
     printf '{"chrome://browser/content/browser.xhtml":{"main-window":{"screenX":"0","screenY":"0","width":"%s","height":"%s","sizemode":"normal"}}}\n' \
         "$SCREEN_W" "$SCREEN_H" > "$PROFILE/xulstore.json"
     log "kiosk window sized to the screen: ${SCREEN_W}x${SCREEN_H}"
+
+    # AND HOW BIG A CSS PIXEL IS ON IT.
+    #
+    # Filling a 4K framebuffer is only half the job. Every panel the shell draws
+    # in the DOM -- the map, the window pages, the status line, the ST&RT menu --
+    # is laid out in CSS pixels at sizes chosen on a 1280x800 screen, so at 3840
+    # wide they come out a third of the size they were designed to be and the map
+    # is genuinely unreadable. Reported as exactly that.
+    #
+    # `layout.css.devPixelsPerPx` is the one lever that fixes it, and it pays
+    # twice: the shell calls `renderer.setPixelRatio(1)`, so the WebGL backing
+    # store is exactly the CSS viewport. Doubling the ratio quarters the pixels
+    # the software rasteriser has to fill. Measured on this guest: 118 ms/frame
+    # at a 3840-wide CSS viewport.
+    #
+    # Target is a CSS viewport around 1920 wide, rounded to a quarter step and
+    # clamped, so 1280 and 1920 framebuffers are left alone at 1.0 and only a
+    # genuinely large screen scales. This is the DEFAULT, not a lock -- Ctrl+=,
+    # Ctrl+- and Ctrl+0 still work (both key handlers in the shell return early
+    # when ctrl is held), and page zoom multiplies on top of this.
+    Q=$(( (SCREEN_W * 4 + 960) / 1920 ))
+    [ "$Q" -lt 4 ] && Q=4
+    [ "$Q" -gt 12 ] && Q=12
+    DPPX="$(( Q / 4 )).$(( (Q % 4) * 25 ))"
+    printf 'user_pref("layout.css.devPixelsPerPx", "%s");\n' "$DPPX" >> "$PROFILE/user.js"
+    log "ui scale ${DPPX}x -- css viewport about $(( SCREEN_W * 4 / Q ))x$(( SCREEN_H * 4 / Q ))"
 else
     log "could not read the screen size from X -- the kiosk will use its own default"
 fi
