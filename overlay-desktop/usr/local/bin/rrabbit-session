@@ -172,11 +172,8 @@ if command -v xrdb >/dev/null 2>&1; then
     SCREEN_H=$(xrdb -symbols 2>/dev/null | sed -n 's/^-DHEIGHT=//p')
 fi
 if [ -n "${SCREEN_W:-}" ] && [ -n "${SCREEN_H:-}" ]; then
-    printf '{"chrome://browser/content/browser.xhtml":{"main-window":{"screenX":"0","screenY":"0","width":"%s","height":"%s","sizemode":"normal"}}}\n' \
-        "$SCREEN_W" "$SCREEN_H" > "$PROFILE/xulstore.json"
-    log "kiosk window sized to the screen: ${SCREEN_W}x${SCREEN_H}"
-
-    # AND HOW BIG A CSS PIXEL IS ON IT.
+    # HOW BIG A CSS PIXEL IS ON IT -- worked out FIRST, because the window size
+    # below is written in CSS pixels and cannot be computed without this.
     #
     # Filling a 4K framebuffer is only half the job. Every panel the shell draws
     # in the DOM -- the map, the window pages, the status line, the ST&RT menu --
@@ -200,7 +197,17 @@ if [ -n "${SCREEN_W:-}" ] && [ -n "${SCREEN_H:-}" ]; then
     [ "$Q" -gt 12 ] && Q=12
     DPPX="$(( Q / 4 )).$(( (Q % 4) * 25 ))"
     printf 'user_pref("layout.css.devPixelsPerPx", "%s");\n' "$DPPX" >> "$PROFILE/user.js"
-    log "ui scale ${DPPX}x -- css viewport about $(( SCREEN_W * 4 / Q ))x$(( SCREEN_H * 4 / Q ))"
+
+    # xulstore's width and height are CSS PIXELS, not device pixels. Writing the
+    # framebuffer size here asks for a window TWICE the screen when the scale is
+    # 2, and the only reason that looked correct the first time is that Firefox
+    # clamps a window to the screen -- a right answer arrived at by a mechanism
+    # that owes us nothing.
+    CSS_W=$(( SCREEN_W * 4 / Q ))
+    CSS_H=$(( SCREEN_H * 4 / Q ))
+    printf '{"chrome://browser/content/browser.xhtml":{"main-window":{"screenX":"0","screenY":"0","width":"%s","height":"%s","sizemode":"normal"}}}\n' \
+        "$CSS_W" "$CSS_H" > "$PROFILE/xulstore.json"
+    log "screen ${SCREEN_W}x${SCREEN_H} · ui scale ${DPPX}x · kiosk window ${CSS_W}x${CSS_H} css px"
 else
     log "could not read the screen size from X -- the kiosk will use its own default"
 fi
